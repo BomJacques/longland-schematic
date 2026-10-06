@@ -1,37 +1,44 @@
 #pragma once
-
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-class LonglandSchematicAudioProcessorEditor final : public juce::AudioProcessorEditor,
-                                                     private juce::Timer
+struct LonglandRenderedSkin;
+class LonglandLookAndFeel;
+class LonglandSchematicAudioProcessorEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
     explicit LonglandSchematicAudioProcessorEditor(LonglandSchematicAudioProcessor&);
-    ~LonglandSchematicAudioProcessorEditor() override = default;
-
+    ~LonglandSchematicAudioProcessorEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
-
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 private:
-    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
-
+    class RenderedDial;
     void timerCallback() override;
-    void configureDial(juce::Slider&, juce::Label&, const juce::String&, const char* parameterId);
-    void drawModule(juce::Graphics&, juce::Rectangle<int>, const juce::String&, const juce::String&);
-
+    juce::Rectangle<int> screenBounds(juce::Rectangle<int>) const;
+    juce::Point<float> modelPoint(juce::Point<float>) const;
+    int noteAt(juce::Point<float>) const;
+    void playMouseNote(const juce::MouseEvent&);
+    void releaseMouseNote();
     LonglandSchematicAudioProcessor& processor;
-    juce::ComboBox presetBox, oscillatorBox, filterBox, noiseTypeBox;
-    juce::Label presetLabel, oscillatorLabel, filterLabel, noiseTypeLabel;
-
-    juce::Slider age, body, drift, cutoff, resonance, attack, decay, sustain, release, ensemble, compressor, output;
-    juce::Label ageLabel, bodyLabel, cutoffLabel, resonanceLabel, attackLabel, decayLabel,
-                sustainLabel, releaseLabel, ensembleLabel, compressorLabel, outputLabel, driftLabel;
-
-    std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
-    std::unique_ptr<ComboAttachment> oscillatorAttachment, filterAttachment, noiseTypeAttachment;
-    longland::DebugState debugState;
-
+    std::unique_ptr<LonglandLookAndFeel> instrumentLook;
+    std::shared_ptr<LonglandRenderedSkin> skin;
+    std::vector<std::unique_ptr<RenderedDial>> dials;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> attachments;
+    juce::ComboBox presetBox;
+    juce::TextButton filterButton { "LP" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> filterAttachment;
+    juce::Label valueLabel, meterLabel;
+    juce::TextButton panicButton { "Panic" };
+    juce::TooltipWindow tooltips { this, 650 };
+    std::array<float,128> keyTravel {};
+    std::array<std::uint32_t,128> keySerial {};
+    std::array<double,128> keyHoldUntil {};
+    juce::Rectangle<float> panelBounds;
+    float panelScale=1.0f, needlePosition=0.0f;
+    double lastTimerMs=0.0;
+    int mouseNote=-1, timerTicks=0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LonglandSchematicAudioProcessorEditor)
 };

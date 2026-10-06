@@ -50,3 +50,9 @@ __pycache__/
 *.pyc
 *.tsbuildinfo
 .DS_Store
+
+# Only the packed runtime skin belongs in Git, not intermediate render passes.
+Assets/render-source*/
+Assets/static-markings*/
+Design/
+*.blend[0-9]*

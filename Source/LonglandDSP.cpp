@@ -1,4 +1,5 @@
 #include "LonglandDSP.h"
+#include "ParameterSchema.h"
 
 #include <algorithm>
 #include <cmath>
@@ -97,6 +98,9 @@ void SynthEngine::setParameters(const Parameters& parameters)
     targetParameters.outputGain = clamp(targetParameters.outputGain, 0.0f, 1.5f);
     targetParameters.driftAmountCents = clamp(targetParameters.driftAmountCents, 0.0f, 24.0f);
     targetParameters.compressorAmount = clamp(targetParameters.compressorAmount, 0.0f, 1.0f);
+    for (const auto& control : floatControls)
+        targetParameters.*(control.member) = clamp(targetParameters.*(control.member), control.minimum, control.maximum);
+    targetParameters.registerOctaves = std::round(targetParameters.registerOctaves);
 }
 
 void SynthEngine::initialiseComponents()
@@ -143,7 +147,7 @@ void SynthEngine::noteOn(int midiNote, float velocity)
     const float history = clamp(pitchDistance / 36.0f, -1.0f, 1.0f);
     const float restMemory = std::exp(-elapsedSeconds * 0.28f);
     const float registerBias = (static_cast<float>(midiNote) - 60.0f) / 67.0f;
-    const float componentBias = voice.component.oscillatorCalibration * 0.36f;
+    const float componentBias = voice.component.oscillatorCalibration * 0.36f * targetParameters.voiceVariation;
     const float stochastic = voice.random.bipolar() * 1.25f;
     const float driftScale = targetParameters.driftAmountCents / 3.0f;
     const float ageScale = (0.22f + 1.78f * targetParameters.age * targetParameters.age) * driftScale;
@@ -207,7 +211,13 @@ float SynthEngine::polyBlep(float phase, float increment)
 float SynthEngine::renderOscillator(Voice& voice, float increment)
 {
     const float phase = voice.phase;
-    const float asymmetry = voice.component.waveformAsymmetry * currentParameters.age;
+    const float asymmetry = voice.component.waveformAsymmetry * currentParameters.age * currentParameters.voiceVariation;
+    const float subIncrement = increment * 0.5f;
+    float sub = voice.subPhase < 0.5f ? 1.0f : -1.0f;
+    sub += polyBlep(voice.subPhase, subIncrement);
+    float subEdge = voice.subPhase - 0.5f;
+    if (subEdge < 0.0f) subEdge += 1.0f;
+    sub -= polyBlep(subEdge, subIncrement);
     float output = 0.0f;
 
     switch (currentParameters.waveform)
@@ -221,7 +231,7 @@ float SynthEngine::renderOscillator(Voice& voice, float increment)
         case Waveform::narrowPulse:
         {
             const float nominalWidth = currentParameters.waveform == Waveform::square ? 0.5f : 0.23f;
-            const float width = clamp(nominalWidth + asymmetry, 0.08f, 0.92f);
+            const float width = clamp(nominalWidth + currentParameters.pulseWidth - 0.5f + asymmetry, 0.08f, 0.92f);
             output = phase < width ? 1.0f : -1.0f;
             output += polyBlep(phase, increment);
             float fallingPhase = phase - width;
@@ -247,35 +257,30 @@ float SynthEngine::renderOscillator(Voice& voice, float increment)
 
         case Waveform::organ:
         {
-            float pulse = phase < 0.42f ? 1.0f : -1.0f;
+            const float width = clamp(.42f + currentParameters.pulseWidth - .5f, .08f, .92f);
+            float pulse = phase < width ? 1.0f : -1.0f;
             pulse += polyBlep(phase, increment);
-            float edge = phase - 0.42f;
+            float edge = phase - width;
             if (edge < 0.0f)
                 edge += 1.0f;
             pulse -= polyBlep(edge, increment);
 
-            const float subIncrement = increment * 0.5f;
-            float sub = voice.subPhase < 0.5f ? 1.0f : -1.0f;
-            sub += polyBlep(voice.subPhase, subIncrement);
-            float subEdge = voice.subPhase - 0.5f;
-            if (subEdge < 0.0f)
-                subEdge += 1.0f;
-            sub -= polyBlep(subEdge, subIncrement);
             output = 0.46f * pulse + 0.18f * sub;
-            voice.subPhase += subIncrement;
-            voice.subPhase -= std::floor(voice.subPhase);
             break;
         }
     }
 
     voice.phase += increment;
     voice.phase -= std::floor(voice.phase);
+    voice.subPhase += subIncrement;
+    voice.subPhase -= std::floor(voice.subPhase);
+    output = output * (1.0f - currentParameters.subBalance * .55f) + sub * currentParameters.subBalance * .55f;
     return output;
 }
 
 void SynthEngine::updateEnvelope(Voice& voice)
 {
-    const float ageError = 1.0f + (voice.component.envelopeCapacitor - 1.0f) * currentParameters.age;
+    const float ageError = 1.0f + (voice.component.envelopeCapacitor - 1.0f) * currentParameters.age * currentParameters.voiceVariation;
     const float leakage = currentParameters.age * currentParameters.age * 0.018f;
 
     switch (voice.envelopeStage)
@@ -327,7 +332,7 @@ void SynthEngine::updateEnvelope(Voice& voice)
 void SynthEngine::updateSlowState(Voice& voice)
 {
     const float activityTarget = voice.gate ? 1.0f : 0.08f;
-    const float thermalTime = voice.gate ? 38.0f : 95.0f;
+    const float thermalTime = (voice.gate ? 38.0f : 95.0f) / (.25f + .75f * currentParameters.thermalAmount);
     voice.temperature += (activityTarget - voice.temperature) * inverseSampleRate / thermalTime;
 
     const float driftScale = currentParameters.driftAmountCents / 3.0f;
@@ -339,28 +344,33 @@ void SynthEngine::updateSlowState(Voice& voice)
     const float limit = currentParameters.driftAmountCents * (0.22f + 0.78f * currentParameters.age);
     voice.microDriftCents = clamp(voice.microDriftCents, -limit, limit);
 
-    const float settlingMs = 30.0f + currentParameters.age * 170.0f;
+    const float settlingMs = (30.0f + currentParameters.age * 170.0f) * currentParameters.settlingTime;
     voice.settledErrorCents *= std::exp(-inverseSampleRate * 1000.0f / settlingMs);
 }
 
 float SynthEngine::applyFilter(Voice& voice, float input)
 {
     const float ageCutoff = 1.0f - 0.28f * currentParameters.age * currentParameters.age;
-    const float mismatch = 1.0f + (voice.component.filterCalibration - 1.0f) * currentParameters.age;
+    const float mismatch = 1.0f + (voice.component.filterCalibration - 1.0f) * currentParameters.age * currentParameters.voiceVariation;
     const float trackingError = 1.0f + ((voice.midiNote - 60.0f) / 67.0f)
-                                      * voice.component.transistorMismatch * currentParameters.age * 0.18f;
-    const float cutoff = clamp(currentParameters.cutoffHz * ageCutoff * mismatch * trackingError,
+                                      * voice.component.transistorMismatch * currentParameters.age * 0.18f * currentParameters.voiceVariation;
+    const float keyFollow = std::pow(2.0f, (voice.midiNote - 60.0f) * currentParameters.keyTracking / 12.0f);
+    const float cutoff = clamp(currentParameters.cutoffHz * ageCutoff * mismatch * trackingError * keyFollow,
                                35.0f, static_cast<float>(sampleRate) * 0.42f);
-    const float f = 2.0f * std::sin(pi * cutoff * inverseSampleRate);
-    const float resonanceWander = 1.0f + voice.component.transistorMismatch * currentParameters.age * 0.35f;
+    const float g = std::tan(pi * cutoff * inverseSampleRate);
+    const float resonanceWander = 1.0f + voice.component.transistorMismatch * currentParameters.age * 0.35f * currentParameters.voiceVariation;
     const float damping = clamp(1.55f - currentParameters.resonance * 1.42f * resonanceWander, 0.16f, 1.7f);
 
-    voice.svfLow += f * voice.svfBand;
-    const float high = input - voice.svfLow - damping * voice.svfBand;
-    voice.svfBand += f * high;
-
-    const float mixed = voice.svfLow * (1.0f - currentParameters.filterMode)
-                      + voice.svfBand * currentParameters.filterMode;
+    // Topology-preserving integrators stay stable when key tracking drives the
+    // cutoff close to Nyquist. The stored values are equivalent integrator states.
+    const float high = (input - (g + damping) * voice.svfBand - voice.svfLow)
+                       / (1.0f + damping * g + g * g);
+    const float band = g * high + voice.svfBand;
+    voice.svfBand = g * high + band;
+    const float low = g * band + voice.svfLow;
+    voice.svfLow = g * band + low;
+    const float mixed = low * (1.0f - currentParameters.filterMode)
+                      + band * currentParameters.filterMode;
     return fastTanh(mixed * (1.0f + 0.22f * currentParameters.resonance));
 }
 
@@ -372,21 +382,26 @@ float SynthEngine::renderVoice(Voice& voice)
 
     updateSlowState(voice);
     const float driftScale = clamp(currentParameters.driftAmountCents / 4.0f, 0.0f, 3.0f);
-    const float fixedOffset = voice.component.oscillatorCalibration * currentParameters.age * driftScale;
+    const float fixedOffset = voice.component.oscillatorCalibration * currentParameters.age * driftScale * currentParameters.voiceVariation;
     const float thermalOffset = (voice.temperature - 0.55f) * voice.component.oscillatorCalibration
-                              * currentParameters.age * 0.42f * driftScale;
+                              * currentParameters.age * 0.42f * driftScale * currentParameters.thermalAmount * currentParameters.voiceVariation;
     const float supplyOffset = (supplyVoltage - 1.0f) * 18.0f * currentParameters.age * driftScale;
     const float trackingError = (voice.midiNote - 60.0f) * voice.component.transistorMismatch
-                              * currentParameters.age * 0.022f * driftScale;
+                              * currentParameters.age * 0.022f * driftScale * currentParameters.voiceVariation;
     const float cents = fixedOffset + voice.microDriftCents + voice.settledErrorCents
                       + thermalOffset + supplyOffset + trackingError;
-    const float frequency = midiToHz(static_cast<float>(voice.midiNote) + cents / 100.0f);
+    const float frequency = midiToHz(static_cast<float>(voice.midiNote) + currentParameters.registerOctaves * 12.0f
+                                    + (cents + currentParameters.tuneCents) / 100.0f);
     const float increment = clamp(frequency * inverseSampleRate, 0.0f, 0.45f);
     float signal = renderOscillator(voice, increment);
+    const float toneHz = 500.0f + 16500.0f * currentParameters.sourceTone * currentParameters.sourceTone;
+    voice.sourceToneState += (signal - voice.sourceToneState) * (1.0f - std::exp(-twoPi * toneHz * inverseSampleRate));
+    signal += (voice.sourceToneState - signal) * (1.0f - currentParameters.sourceTone);
 
     const float asymDrive = 1.0f + currentParameters.age * 0.8f;
     signal = fastTanh(signal * asymDrive
-                    + voice.component.transistorMismatch * currentParameters.age * signal * signal);
+                    + (voice.component.transistorMismatch * currentParameters.age * currentParameters.voiceVariation
+                       + currentParameters.circuitBias) * signal * signal);
     signal = applyFilter(voice, signal);
 
     const float ageBandwidth = 12000.0f - currentParameters.age * currentParameters.age * 6600.0f;
@@ -399,7 +414,7 @@ float SynthEngine::renderVoice(Voice& voice)
     voice.dcBlockInput = voice.ageLowPass;
     voice.dcBlockOutput = highPassed;
 
-    const float vcaMismatch = 1.0f + (voice.component.vcaGain - 1.0f) * currentParameters.age;
+    const float vcaMismatch = 1.0f + (voice.component.vcaGain - 1.0f) * currentParameters.age * currentParameters.voiceVariation;
     const float amplitudeFlutter = 1.0f + voice.microDriftCents * currentParameters.age * 0.006f;
     const float output = highPassed * voice.envelope * voice.velocity * vcaMismatch * amplitudeFlutter;
     voice.lastOutput = output;
@@ -410,7 +425,8 @@ float SynthEngine::renderVoice(Voice& voice)
 float SynthEngine::applyOutputCharacter(float input)
 {
     const float supplyHeadroom = 1.35f - 0.32f * currentParameters.age + (supplyVoltage - 1.0f) * 1.8f;
-    float output = fastTanh(input / std::max(0.45f, supplyHeadroom)) * supplyHeadroom;
+    const float colour = currentParameters.character;
+    float output = colour < .0001f ? input : fastTanh(input * colour / std::max(0.45f, supplyHeadroom)) * supplyHeadroom / colour;
 
     const float noiseLevel = 0.00005f + (0.18f + 0.82f * currentParameters.age * currentParameters.age) * 0.00105f;
     float noise = 0.0f;
@@ -444,7 +460,7 @@ float SynthEngine::applyOutputCharacter(float input)
             break;
         }
     }
-    output += noise;
+    output += noise * currentParameters.noiseAmount;
 
     const float dcCoefficient = std::exp(-twoPi * 18.0f * inverseSampleRate);
     const float dcBlocked = output - outputDcInput + dcCoefficient * outputDcState;
@@ -500,15 +516,16 @@ void SynthEngine::applyMaster(float& left, float& right)
     left *= compressorGain;
     right *= compressorGain;
 
-    const float transformerDrive = 1.0f + amount * 1.25f + currentParameters.age * 0.18f;
+    const float transformerDrive = (1.0f + amount * 1.25f + currentParameters.age * 0.18f)
+                                  * std::pow(10.0f, currentParameters.driveDb / 20.0f);
     const float memoryCoefficient = 1.0f - std::exp(-twoPi * 34.0f * inverseSampleRate);
     transformerMemoryLeft += (left - transformerMemoryLeft) * memoryCoefficient;
     transformerMemoryRight += (right - transformerMemoryRight) * memoryCoefficient;
     const float leftBiased = left + transformerMemoryLeft * 0.045f * transformerDrive;
     const float rightBiased = right + transformerMemoryRight * 0.045f * transformerDrive;
     const float normaliser = 1.0f / std::tanh(transformerDrive);
-    left = std::tanh(leftBiased * transformerDrive) * normaliser * currentParameters.outputGain;
-    right = std::tanh(rightBiased * transformerDrive) * normaliser * currentParameters.outputGain;
+    left = std::tanh(leftBiased * transformerDrive) * normaliser * currentParameters.outputGain * currentParameters.expression;
+    right = std::tanh(rightBiased * transformerDrive) * normaliser * currentParameters.outputGain * currentParameters.expression;
 }
 
 float SynthEngine::applyEnsemble(float dry, bool rightChannel)
@@ -524,8 +541,8 @@ float SynthEngine::applyEnsemble(float dry, bool rightChannel)
         ensemblePhaseB -= std::floor(ensemblePhaseB);
     }
 
-    const float phaseA = rightChannel ? ensemblePhaseA + 0.31f : ensemblePhaseA;
-    const float phaseB = rightChannel ? ensemblePhaseB + 0.57f : ensemblePhaseB;
+    const float phaseA = rightChannel ? ensemblePhaseA + 0.31f * currentParameters.stereoWidth : ensemblePhaseA;
+    const float phaseB = rightChannel ? ensemblePhaseB + 0.57f * currentParameters.stereoWidth : ensemblePhaseB;
     const float centreSamples = static_cast<float>(sampleRate) * 0.011f;
     const float depthSamples = static_cast<float>(sampleRate) * 0.00125f;
     const float delayA = centreSamples + depthSamples * std::sin(twoPi * phaseA);
@@ -542,19 +559,9 @@ void SynthEngine::advanceSmoothedParameters()
     {
         current += (target - current) * coefficient;
     };
-    smooth(currentParameters.age, targetParameters.age);
-    smooth(currentParameters.body, targetParameters.body);
-    smooth(currentParameters.cutoffHz, targetParameters.cutoffHz);
-    smooth(currentParameters.resonance, targetParameters.resonance);
+    for (const auto& control : floatControls)
+        smooth(currentParameters.*(control.member), targetParameters.*(control.member));
     smooth(currentParameters.filterMode, targetParameters.filterMode);
-    smooth(currentParameters.attackSeconds, targetParameters.attackSeconds);
-    smooth(currentParameters.decaySeconds, targetParameters.decaySeconds);
-    smooth(currentParameters.sustain, targetParameters.sustain);
-    smooth(currentParameters.releaseSeconds, targetParameters.releaseSeconds);
-    smooth(currentParameters.ensemble, targetParameters.ensemble);
-    smooth(currentParameters.outputGain, targetParameters.outputGain);
-    smooth(currentParameters.driftAmountCents, targetParameters.driftAmountCents);
-    smooth(currentParameters.compressorAmount, targetParameters.compressorAmount);
     currentParameters.waveform = targetParameters.waveform;
     currentParameters.noiseType = targetParameters.noiseType;
 }
@@ -577,12 +584,15 @@ void SynthEngine::process(float* left, float* right, int numSamples)
                 ++voice.samplesSinceUse;
         }
 
-        const float supplyTarget = 1.0f - currentParameters.age * 0.0016f * static_cast<float>(active);
+        const float supplyTarget = 1.0f - currentParameters.age * 0.0016f * static_cast<float>(active) * currentParameters.supplySag;
         const float supplyRate = supplyTarget < supplyVoltage ? 0.36f : 0.055f;
         supplyVoltage += (supplyTarget - supplyVoltage) * inverseSampleRate * supplyRate;
 
-        const float normalization = 0.52f / std::sqrt(std::max(1.0f, static_cast<float>(active)));
-        const float dry = applyOutputCharacter(mix * normalization);
+        // Fixed summing gain: counting release tails here made held notes jump
+        // louder as other voices reached idle (almost +3 dB for two -> one).
+        // Preserve the single-note level; the console bus handles chord peaks.
+        constexpr float voiceBusGain = 0.52f;
+        const float dry = applyOutputCharacter(mix * voiceBusGain);
         float masterLeft = applyEnsemble(dry, false);
         float masterRight = right != nullptr ? applyEnsemble(dry, true) : masterLeft;
         applyMaster(masterLeft, masterRight);

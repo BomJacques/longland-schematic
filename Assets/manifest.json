@@ -1,0 +1,808 @@
+{
+  "width": 1600,
+  "height": 960,
+  "knobFrames": 49,
+  "keyFrames": 5,
+  "source": "Design/Longland-Schematic-Corrected-Scales-v007.blend",
+  "sourceFingerprint": "0d1b6ef7a185c1d17c58fecae398161598d7c3ba11637bae86c87cc7b5f38726-static-scale-patch-v1",
+  "camera": "LS_Camera_Orthographic_UI",
+  "knobs": [
+    {
+      "object": "LS_Control_CIRCUIT_BIAS",
+      "parameter": "bias",
+      "rect": [
+        820,
+        289,
+        70,
+        70
+      ],
+      "asset": "knob_bias.png"
+    },
+    {
+      "object": "LS_Control_CIRCUIT_BODY",
+      "parameter": "body",
+      "rect": [
+        702,
+        286,
+        77,
+        77
+      ],
+      "asset": "knob_body.png"
+    },
+    {
+      "object": "LS_Control_CIRCUIT_CUTOFF",
+      "parameter": "cutoff",
+      "rect": [
+        702,
+        190,
+        76,
+        75
+      ],
+      "asset": "knob_cutoff.png"
+    },
+    {
+      "object": "LS_Control_CIRCUIT_NOISE",
+      "parameter": "noise",
+      "rect": [
+        703,
+        383,
+        75,
+        75
+      ],
+      "asset": "knob_noise.png"
+    },
+    {
+      "object": "LS_Control_CIRCUIT_NOISE TYPE",
+      "parameter": "noiseType",
+      "rect": [
+        817,
+        383,
+        75,
+        75
+      ],
+      "asset": "knob_noiseType.png"
+    },
+    {
+      "object": "LS_Control_CIRCUIT_RESONANCE",
+      "parameter": "resonance",
+      "rect": [
+        820,
+        192,
+        70,
+        71
+      ],
+      "asset": "knob_resonance.png"
+    },
+    {
+      "object": "LS_Control_CONTOUR_ATTACK",
+      "parameter": "attack",
+      "rect": [
+        948,
+        190,
+        76,
+        76
+      ],
+      "asset": "knob_attack.png"
+    },
+    {
+      "object": "LS_Control_CONTOUR_DECAY",
+      "parameter": "decay",
+      "rect": [
+        1065,
+        192,
+        71,
+        71
+      ],
+      "asset": "knob_decay.png"
+    },
+    {
+      "object": "LS_Control_CONTOUR_ENSEMBLE",
+      "parameter": "ensemble",
+      "rect": [
+        950,
+        385,
+        71,
+        71
+      ],
+      "asset": "knob_ensemble.png"
+    },
+    {
+      "object": "LS_Control_CONTOUR_RELEASE",
+      "parameter": "release",
+      "rect": [
+        1062,
+        286,
+        76,
+        76
+      ],
+      "asset": "knob_release.png"
+    },
+    {
+      "object": "LS_Control_CONTOUR_SUSTAIN",
+      "parameter": "sustain",
+      "rect": [
+        950,
+        289,
+        71,
+        70
+      ],
+      "asset": "knob_sustain.png"
+    },
+    {
+      "object": "LS_Control_CONTOUR_WIDTH",
+      "parameter": "width",
+      "rect": [
+        1062,
+        382,
+        77,
+        77
+      ],
+      "asset": "knob_width.png"
+    },
+    {
+      "object": "LS_Control_MEMORY_AGE",
+      "parameter": "age",
+      "rect": [
+        564,
+        182,
+        91,
+        91
+      ],
+      "asset": "knob_age.png"
+    },
+    {
+      "object": "LS_Control_MEMORY_DRIFT",
+      "parameter": "drift",
+      "rect": [
+        451,
+        184,
+        87,
+        87
+      ],
+      "asset": "knob_drift.png"
+    },
+    {
+      "object": "LS_Control_MEMORY_SETTLE",
+      "parameter": "settle",
+      "rect": [
+        458,
+        288,
+        73,
+        72
+      ],
+      "asset": "knob_settle.png"
+    },
+    {
+      "object": "LS_Control_MEMORY_SUPPLY",
+      "parameter": "supply",
+      "rect": [
+        573,
+        384,
+        73,
+        73
+      ],
+      "asset": "knob_supply.png"
+    },
+    {
+      "object": "LS_Control_MEMORY_VOICE",
+      "parameter": "voice",
+      "rect": [
+        459,
+        385,
+        71,
+        71
+      ],
+      "asset": "knob_voice.png"
+    },
+    {
+      "object": "LS_Control_MEMORY_WARMTH",
+      "parameter": "warmth",
+      "rect": [
+        572,
+        286,
+        75,
+        76
+      ],
+      "asset": "knob_warmth.png"
+    },
+    {
+      "object": "LS_Control_Master COMP",
+      "parameter": "compressor",
+      "rect": [
+        1245,
+        290,
+        73,
+        73
+      ],
+      "asset": "knob_compressor.png"
+    },
+    {
+      "object": "LS_Control_Master DRIVE",
+      "parameter": "drive",
+      "rect": [
+        1334,
+        290,
+        73,
+        73
+      ],
+      "asset": "knob_drive.png"
+    },
+    {
+      "object": "LS_Control_Master VOLUME",
+      "parameter": "output",
+      "rect": [
+        1272,
+        382,
+        106,
+        106
+      ],
+      "asset": "knob_output.png"
+    },
+    {
+      "object": "LS_Control_Performance CHARACTER",
+      "parameter": "character",
+      "rect": [
+        169,
+        618,
+        88,
+        92
+      ],
+      "asset": "knob_character.png"
+    },
+    {
+      "object": "LS_Control_Performance EXPRESSION",
+      "parameter": "expression",
+      "rect": [
+        165,
+        696,
+        95,
+        95
+      ],
+      "asset": "knob_expression.png"
+    },
+    {
+      "object": "LS_Control_Performance TUNE",
+      "parameter": "tune",
+      "rect": [
+        169,
+        536,
+        87,
+        90
+      ],
+      "asset": "knob_tune.png"
+    },
+    {
+      "object": "LS_Control_SOURCE_BALANCE",
+      "parameter": "balance",
+      "rect": [
+        326,
+        286,
+        76,
+        76
+      ],
+      "asset": "knob_balance.png"
+    },
+    {
+      "object": "LS_Control_SOURCE_KEY TRACK",
+      "parameter": "keyTrack",
+      "rect": [
+        326,
+        382,
+        76,
+        77
+      ],
+      "asset": "knob_keyTrack.png"
+    },
+    {
+      "object": "LS_Control_SOURCE_PULSE",
+      "parameter": "pulse",
+      "rect": [
+        214,
+        289,
+        70,
+        70
+      ],
+      "asset": "knob_pulse.png"
+    },
+    {
+      "object": "LS_Control_SOURCE_REGISTER",
+      "parameter": "register",
+      "rect": [
+        326,
+        189,
+        76,
+        77
+      ],
+      "asset": "knob_register.png"
+    },
+    {
+      "object": "LS_Control_SOURCE_TONE",
+      "parameter": "tone",
+      "rect": [
+        214,
+        385,
+        70,
+        71
+      ],
+      "asset": "knob_tone.png"
+    },
+    {
+      "object": "LS_Control_SOURCE_WAVE",
+      "parameter": "waveform",
+      "rect": [
+        211,
+        189,
+        76,
+        77
+      ],
+      "asset": "knob_waveform.png"
+    }
+  ],
+  "keys": [
+    {
+      "object": "LS_Black key 00",
+      "note": 49,
+      "black": true,
+      "rect": [
+        303,
+        549,
+        29,
+        147
+      ],
+      "asset": "key_49.png"
+    },
+    {
+      "object": "LS_Black key 01",
+      "note": 51,
+      "black": true,
+      "rect": [
+        351,
+        549,
+        30,
+        148
+      ],
+      "asset": "key_51.png"
+    },
+    {
+      "object": "LS_Black key 03",
+      "note": 54,
+      "black": true,
+      "rect": [
+        448,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_54.png"
+    },
+    {
+      "object": "LS_Black key 04",
+      "note": 56,
+      "black": true,
+      "rect": [
+        496,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_56.png"
+    },
+    {
+      "object": "LS_Black key 05",
+      "note": 58,
+      "black": true,
+      "rect": [
+        544,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_58.png"
+    },
+    {
+      "object": "LS_Black key 07",
+      "note": 61,
+      "black": true,
+      "rect": [
+        641,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_61.png"
+    },
+    {
+      "object": "LS_Black key 08",
+      "note": 63,
+      "black": true,
+      "rect": [
+        689,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_63.png"
+    },
+    {
+      "object": "LS_Black key 10",
+      "note": 66,
+      "black": true,
+      "rect": [
+        786,
+        549,
+        28,
+        148
+      ],
+      "asset": "key_66.png"
+    },
+    {
+      "object": "LS_Black key 11",
+      "note": 68,
+      "black": true,
+      "rect": [
+        833,
+        549,
+        31,
+        148
+      ],
+      "asset": "key_68.png"
+    },
+    {
+      "object": "LS_Black key 12",
+      "note": 70,
+      "black": true,
+      "rect": [
+        882,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_70.png"
+    },
+    {
+      "object": "LS_Black key 14",
+      "note": 73,
+      "black": true,
+      "rect": [
+        977,
+        549,
+        32,
+        148
+      ],
+      "asset": "key_73.png"
+    },
+    {
+      "object": "LS_Black key 15",
+      "note": 75,
+      "black": true,
+      "rect": [
+        1026,
+        549,
+        30,
+        148
+      ],
+      "asset": "key_75.png"
+    },
+    {
+      "object": "LS_Black key 17",
+      "note": 78,
+      "black": true,
+      "rect": [
+        1123,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_78.png"
+    },
+    {
+      "object": "LS_Black key 18",
+      "note": 80,
+      "black": true,
+      "rect": [
+        1171,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_80.png"
+    },
+    {
+      "object": "LS_Black key 19",
+      "note": 82,
+      "black": true,
+      "rect": [
+        1220,
+        549,
+        29,
+        148
+      ],
+      "asset": "key_82.png"
+    },
+    {
+      "object": "LS_White key 00",
+      "note": 48,
+      "black": false,
+      "rect": [
+        270,
+        554,
+        47,
+        248
+      ],
+      "asset": "key_48.png"
+    },
+    {
+      "object": "LS_White key 01",
+      "note": 50,
+      "black": false,
+      "rect": [
+        318,
+        554,
+        47,
+        248
+      ],
+      "asset": "key_50.png"
+    },
+    {
+      "object": "LS_White key 02",
+      "note": 52,
+      "black": false,
+      "rect": [
+        366,
+        554,
+        48,
+        248
+      ],
+      "asset": "key_52.png"
+    },
+    {
+      "object": "LS_White key 03",
+      "note": 53,
+      "black": false,
+      "rect": [
+        414,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_53.png"
+    },
+    {
+      "object": "LS_White key 04",
+      "note": 55,
+      "black": false,
+      "rect": [
+        462,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_55.png"
+    },
+    {
+      "object": "LS_White key 05",
+      "note": 57,
+      "black": false,
+      "rect": [
+        511,
+        553,
+        47,
+        249
+      ],
+      "asset": "key_57.png"
+    },
+    {
+      "object": "LS_White key 06",
+      "note": 59,
+      "black": false,
+      "rect": [
+        558,
+        554,
+        49,
+        248
+      ],
+      "asset": "key_59.png"
+    },
+    {
+      "object": "LS_White key 07",
+      "note": 60,
+      "black": false,
+      "rect": [
+        607,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_60.png"
+    },
+    {
+      "object": "LS_White key 08",
+      "note": 62,
+      "black": false,
+      "rect": [
+        655,
+        553,
+        49,
+        249
+      ],
+      "asset": "key_62.png"
+    },
+    {
+      "object": "LS_White key 09",
+      "note": 64,
+      "black": false,
+      "rect": [
+        704,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_64.png"
+    },
+    {
+      "object": "LS_White key 10",
+      "note": 65,
+      "black": false,
+      "rect": [
+        752,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_65.png"
+    },
+    {
+      "object": "LS_White key 11",
+      "note": 67,
+      "black": false,
+      "rect": [
+        800,
+        553,
+        49,
+        249
+      ],
+      "asset": "key_67.png"
+    },
+    {
+      "object": "LS_White key 12",
+      "note": 69,
+      "black": false,
+      "rect": [
+        849,
+        553,
+        47,
+        249
+      ],
+      "asset": "key_69.png"
+    },
+    {
+      "object": "LS_White key 13",
+      "note": 71,
+      "black": false,
+      "rect": [
+        897,
+        553,
+        47,
+        249
+      ],
+      "asset": "key_71.png"
+    },
+    {
+      "object": "LS_White key 14",
+      "note": 72,
+      "black": false,
+      "rect": [
+        945,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_72.png"
+    },
+    {
+      "object": "LS_White key 15",
+      "note": 74,
+      "black": false,
+      "rect": [
+        993,
+        553,
+        48,
+        248
+      ],
+      "asset": "key_74.png"
+    },
+    {
+      "object": "LS_White key 16",
+      "note": 76,
+      "black": false,
+      "rect": [
+        1041,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_76.png"
+    },
+    {
+      "object": "LS_White key 17",
+      "note": 77,
+      "black": false,
+      "rect": [
+        1090,
+        554,
+        47,
+        248
+      ],
+      "asset": "key_77.png"
+    },
+    {
+      "object": "LS_White key 18",
+      "note": 79,
+      "black": false,
+      "rect": [
+        1137,
+        553,
+        49,
+        249
+      ],
+      "asset": "key_79.png"
+    },
+    {
+      "object": "LS_White key 19",
+      "note": 81,
+      "black": false,
+      "rect": [
+        1186,
+        553,
+        48,
+        249
+      ],
+      "asset": "key_81.png"
+    },
+    {
+      "object": "LS_White key 20",
+      "note": 83,
+      "black": false,
+      "rect": [
+        1234,
+        551,
+        48,
+        249
+      ],
+      "asset": "key_83.png"
+    },
+    {
+      "object": "LS_White key 21",
+      "note": 84,
+      "black": false,
+      "rect": [
+        1283,
+        553,
+        47,
+        249
+      ],
+      "asset": "key_84.png"
+    }
+  ],
+  "vu": {
+    "rect": [
+      1245,
+      190,
+      161,
+      75
+    ],
+    "asset": "vu.png",
+    "frames": 49,
+    "minDb": -20,
+    "maxDb": 3,
+    "referenceDbFS": -18
+  },
+  "animationSource": "Design/Longland-Schematic-v041-Integration-Source.blend",
+  "animationSourceFingerprint": "d59f43e2b7ce2f3d1110318786cf7154e8be1c367f259122001963f8f20b06e9-ui-export-v2-1600x960-16spp",
+  "staticPatch": {
+    "folder": "static-markings-v042",
+    "markCount": 297,
+    "referenceRenders": 2,
+    "changedPixels": 1425200
+  }
+}

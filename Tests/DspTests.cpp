@@ -1,4 +1,5 @@
 #include "LonglandDSP.h"
+#include "ParameterSchema.h"
 
 #include <algorithm>
 #include <array>
@@ -236,6 +237,82 @@ void testPhysicalMasterStage()
     });
     expect(isSilent, "final Volume control reaches true silence");
 }
+
+std::vector<float> capture(longland::Parameters parameters, int samples=16000, double rate=48000.0)
+{
+    longland::SynthEngine engine;engine.setParameters(parameters);engine.prepare(rate,256);
+    for(int note:{48,60,67,84})engine.noteOn(note,.8f);
+    std::vector<float> output(static_cast<std::size_t>(samples)),right(output.size());
+    engine.process(output.data(),right.data(),samples);
+    expect(std::all_of(output.begin(),output.end(),[](float v){return std::isfinite(v);}),"expanded controls produce finite audio");
+    return output;
+}
+
+void testExpandedControls()
+{
+    longland::Parameters base;base.age=.75f;base.waveform=longland::Waveform::square;base.ensemble=.55f;
+    base.driftAmountCents=18;base.cutoffHz=4200;
+    for(std::size_t i=12;i<longland::floatControls.size();++i)
+    {
+        const auto& c=longland::floatControls[i];auto low=base,high=base;
+        low.*(c.member)=c.minimum;high.*(c.member)=c.maximum;
+        auto a=capture(low),b=capture(high);double difference=0;
+        for(std::size_t j=0;j<a.size();++j)difference+=std::abs(a[j]-b[j]);
+        expect(difference/a.size()>1.0e-7,std::string(c.id)+" has a real DSP effect");
+    }
+    for(double rate:{44100.0,48000.0,96000.0,192000.0})
+    {
+        auto maximum=base;for(const auto& c:longland::floatControls)maximum.*(c.member)=c.maximum;
+        capture(maximum,12000,rate);
+    }
+    longland::SynthEngine mono;base.stereoWidth=0;mono.setParameters(base);mono.prepare(48000,256);mono.noteOn(60,.8f);
+    std::array<float,4096> left{},right{};mono.process(left.data(),right.data(),4096);
+    expect(left==right,"Width zero collapses the ensemble to mono");
+    base.expression=0;const auto silent=capture(base);
+    expect(std::all_of(silent.begin(),silent.end(),[](float v){return v==0;}),"Expression zero reaches silence");
+    base.expression=1;base.noiseAmount=0;longland::SynthEngine quiet;quiet.setParameters(base);quiet.prepare(48000,256);
+    quiet.process(left.data(),right.data(),4096);
+    expect(std::all_of(left.begin(),left.end(),[](float v){return v==0;}),"Noise zero mutes selected circuit noise");
+}
+
+void testHeldNoteDoesNotSwellWhenTailsEnd()
+{
+    // A barely audible second voice must not turn down the held note, then
+    // boost it again seconds later when that voice's release reaches idle.
+    for (double rate : { 44100.0, 48000.0, 96000.0 })
+    for (int tailCount : { 1, 7 })
+    {
+        longland::Parameters p;
+        p.age = 0.0f; p.driftAmountCents = 0.0f; p.ensemble = 0.0f;
+        p.noiseType = longland::NoiseType::off; p.compressorAmount = 0.0f;
+        p.attackSeconds = 0.001f; p.decaySeconds = 0.005f;
+        p.sustain = 1.0f; p.releaseSeconds = 3.0f;
+        longland::SynthEngine engine;
+        engine.setParameters(p); engine.prepare(rate, 256);
+        engine.noteOn(69, 0.7f);
+        for (int tail = 0; tail < tailCount; ++tail)
+            engine.noteOn(60 + tail, 0.001f);
+        render(engine, static_cast<int>(rate));
+        for (int tail = 0; tail < tailCount; ++tail)
+            engine.noteOff(60 + tail, true);
+        auto rms = [&] ()
+        {
+            std::vector<float> left(static_cast<std::size_t>(rate / 2)), right(left.size());
+            engine.process(left.data(), right.data(), static_cast<int>(left.size()));
+            double energy = 0.0;
+            for (float sample : left) energy += sample * sample;
+            return std::sqrt(energy / left.size());
+        };
+        const double withTail = rms();
+        expect(engine.getDebugState().activeVoices == tailCount + 1, "quiet release tails are still active for swell regression");
+        render(engine, static_cast<int>(rate * 7));
+        const double withoutTail = rms();
+        expect(engine.getDebugState().activeVoices == 1, "release tail finishes while first note remains held");
+        const double changeDb = 20.0 * std::log10(withoutTail / withTail);
+        std::cout << "Held-note level change after " << tailCount << " tail(s) end at " << rate << " Hz: " << changeDb << " dB\n";
+        expect(std::abs(changeDb) < 0.1, "held note does not change level when a quiet tail finishes");
+    }
+}
 }
 
 int main()
@@ -247,6 +324,8 @@ int main()
     testDeterminism();
     testDriftControlAndNoiseTypes();
     testPhysicalMasterStage();
+    testExpandedControls();
+    testHeldNoteDoesNotSwellWhenTailsEnd();
     if (failures == 0)
     {
         std::cout << "All Longland DSP tests passed.\n";

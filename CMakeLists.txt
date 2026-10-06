@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(LonglandSchematic VERSION 0.3.0 LANGUAGES C CXX)
+project(LonglandSchematic VERSION 0.4.2 LANGUAGES C CXX)
 
 option(LONGLAND_BUILD_PLUGIN "Build the JUCE VST3 plug-in" ON)
 option(LONGLAND_BUILD_TESTS "Build the framework-free DSP tests" ON)
@@ -33,6 +33,12 @@ if(LONGLAND_BUILD_PLUGIN)
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(JUCE)
 
+    file(GLOB LONGLAND_SKIN_IMAGES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Assets/*.png")
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Assets/panel.png")
+        message(FATAL_ERROR "Render and pack the Blender UI assets before building the plug-in.")
+    endif()
+    juce_add_binary_data(LonglandSkin SOURCES ${LONGLAND_SKIN_IMAGES} Assets/manifest.json)
+
     juce_add_plugin(LonglandSchematic
         COMPANY_NAME "Longland"
         BUNDLE_ID "com.longland.schematic"
@@ -51,9 +57,11 @@ if(LONGLAND_BUILD_PLUGIN)
         Source/PluginProcessor.h
         Source/PluginEditor.cpp
         Source/PluginEditor.h
+        Source/ParameterSchema.h
         Source/FactoryPresets.h)
     target_link_libraries(LonglandSchematic PRIVATE
         LonglandDSP
+        LonglandSkin
         juce::juce_audio_utils
         juce::juce_dsp
         PUBLIC
@@ -66,4 +74,13 @@ if(LONGLAND_BUILD_PLUGIN)
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
     juce_generate_juce_header(LonglandSchematic)
+
+    if(LONGLAND_BUILD_TESTS)
+        juce_add_console_app(LonglandPluginTests PRODUCT_NAME "Longland Integration Tests")
+        target_sources(LonglandPluginTests PRIVATE Tests/PluginTests.cpp)
+        target_include_directories(LonglandPluginTests PRIVATE Source "${CMAKE_CURRENT_BINARY_DIR}/LonglandSchematic_artefacts/JuceLibraryCode")
+        target_link_libraries(LonglandPluginTests PRIVATE LonglandSchematic LonglandSkin LonglandDSP juce::juce_audio_utils)
+        target_compile_definitions(LonglandPluginTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_PLUGINHOST_VST3=1)
+        add_test(NAME LonglandPluginTests COMMAND LonglandPluginTests)
+    endif()
 endif()

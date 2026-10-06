@@ -42,6 +42,23 @@ struct Parameters
     float driftAmountCents = 8.0f;
     NoiseType noiseType = NoiseType::thermal;
     float compressorAmount = 0.48f;
+    // Appended fields preserve aggregate factory presets and legacy defaults.
+    float registerOctaves = 0.0f;
+    float pulseWidth = 0.5f;
+    float subBalance = 0.0f;
+    float sourceTone = 1.0f;
+    float keyTracking = 0.0f;
+    float settlingTime = 1.0f;
+    float thermalAmount = 1.0f;
+    float voiceVariation = 1.0f;
+    float supplySag = 1.0f;
+    float circuitBias = 0.0f;
+    float noiseAmount = 1.0f;
+    float stereoWidth = 1.0f;
+    float driveDb = 0.0f;
+    float tuneCents = 0.0f;
+    float character = 1.0f;
+    float expression = 1.0f;
 };
 
 struct VoiceDebugState
@@ -114,6 +131,7 @@ private:
         float phase = 0.0f;
         float subPhase = 0.0f;
         float triangleState = 0.0f;
+        float sourceToneState = 0.0f;
         float envelope = 0.0f;
         EnvelopeStage envelopeStage = EnvelopeStage::idle;
         float noteErrorCents = 0.0f;

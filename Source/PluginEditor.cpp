@@ -1,233 +1,227 @@
 #include "PluginEditor.h"
 #include "FactoryPresets.h"
+#include "BinaryData.h"
+#include <cmath>
 
 namespace
 {
-constexpr int headerHeight = 82;
-constexpr int moduleTop = 100;
-constexpr int moduleHeight = 190;
+juce::Image loadImage(const juce::String& file)
+{
+    int size=0;
+    const auto* data=BinaryData::getNamedResource(file.replaceCharacter('.', '_').toRawUTF8(),size);
+    return data?juce::ImageFileFormat::loadFrom(data,static_cast<std::size_t>(size)):juce::Image{};
 }
+struct Sprite
+{
+    std::vector<juce::Image> poses;
+    juce::Rectangle<int> rect;
+    int frames=1, note=-1;
+    juce::String parameter;
+    bool black=false;
+};
+Sprite readSprite(const juce::var& data,int frames)
+{
+    const auto& r=data["rect"];
+    Sprite s;
+    s.rect={static_cast<int>(r[0]),static_cast<int>(r[1]),static_cast<int>(r[2]),static_cast<int>(r[3])};
+    const auto sheet=loadImage(data["asset"].toString());s.frames=frames;s.parameter=data["parameter"].toString();
+    s.note=data.hasProperty("note")?static_cast<int>(data["note"]):-1;s.black=static_cast<bool>(data["black"]);
+    jassert(sheet.isValid() && sheet.getWidth()==s.rect.getWidth() && sheet.getHeight()==frames*s.rect.getHeight());
+    // Independent frame pixels prevent the scaled-image sampler from reading
+    // across a filmstrip boundary into the next pose's top/bottom edge.
+    s.poses.reserve(static_cast<std::size_t>(frames));
+    for(int frame=0;frame<frames;++frame)
+        s.poses.push_back(sheet.getClippedImage({0,frame*s.rect.getHeight(),s.rect.getWidth(),s.rect.getHeight()}).createCopy());
+    return s;
+}
+void drawSprite(juce::Graphics& g,const Sprite& s,float amount,bool interpolate)
+{
+    const auto position=juce::jlimit(0.0f,1.0f,amount)*static_cast<float>(s.frames-1);
+    const int lower=interpolate?static_cast<int>(position):juce::roundToInt(position);
+    const auto draw=[&](int frame){g.drawImageAt(s.poses[static_cast<std::size_t>(frame)],s.rect.getX(),s.rect.getY());};
+    draw(lower);
+    // Opaque patches interpolate; transparent keys use true poses without double edges.
+    if(interpolate && lower<s.frames-1){g.setOpacity(position-static_cast<float>(lower));draw(lower+1);g.setOpacity(1.0f);}
+}
+}
+class LonglandLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    LonglandLookAndFeel()
+    {
+        const juce::Colour dark(0xff252119), ivory(0xffeadfc7), edge(0xff786c55), accent(0xff985b3d);
+        setColour(juce::ComboBox::backgroundColourId,dark);
+        setColour(juce::ComboBox::textColourId,ivory);
+        setColour(juce::ComboBox::arrowColourId,ivory);
+        setColour(juce::ComboBox::outlineColourId,edge);
+        setColour(juce::ComboBox::focusedOutlineColourId,accent);
+        setColour(juce::PopupMenu::backgroundColourId,dark);
+        setColour(juce::PopupMenu::textColourId,ivory);
+        setColour(juce::PopupMenu::headerTextColourId,ivory);
+        setColour(juce::PopupMenu::highlightedBackgroundColourId,accent);
+        setColour(juce::PopupMenu::highlightedTextColourId,ivory);
+        setColour(juce::TextButton::buttonColourId,dark);
+        setColour(juce::TextButton::buttonOnColourId,accent);
+        setColour(juce::TextButton::textColourOffId,ivory);
+        setColour(juce::TextButton::textColourOnId,ivory);
+        setColour(juce::TooltipWindow::backgroundColourId,ivory);
+        setColour(juce::TooltipWindow::textColourId,dark);
+        setColour(juce::TooltipWindow::outlineColourId,edge);
+    }
+    void drawPopupMenuBackground(juce::Graphics& g,int width,int height) override
+    {
+        g.fillAll(findColour(juce::PopupMenu::backgroundColourId));
+        g.setColour(juce::Colour(0xff786c55));g.drawRect(0,0,width,height);
+    }
+    juce::Font getPopupMenuFont() override {return juce::FontOptions(16.0f);}
+    juce::Font getComboBoxFont(juce::ComboBox& box) override
+    {return juce::FontOptions(juce::jlimit(10.0f,16.0f,box.getHeight()*.62f));}
+    juce::Font getTextButtonFont(juce::TextButton&,int height) override
+    {return juce::FontOptions(juce::jlimit(10.0f,14.0f,height*.6f));}
+};
+struct LonglandRenderedSkin
+{
+    juce::Image panel;
+    std::vector<Sprite> knobs,keys;
+    Sprite vu;
+    int width=1600,height=960;
+    LonglandRenderedSkin()
+    {
+        int size=0;const auto* bytes=BinaryData::getNamedResource("manifest_json",size);
+        const auto data=juce::JSON::parse(juce::String::fromUTF8(bytes,size));
+        width=static_cast<int>(data["width"]);height=static_cast<int>(data["height"]);panel=loadImage("panel.png");
+        for(const auto& item:*data["knobs"].getArray())knobs.push_back(readSprite(item,static_cast<int>(data["knobFrames"])));
+        for(const auto& item:*data["keys"].getArray())keys.push_back(readSprite(item,static_cast<int>(data["keyFrames"])));
+        std::stable_sort(keys.begin(),keys.end(),[](const auto& a,const auto& b){return a.black<b.black;});
+        vu=readSprite(data["vu"],static_cast<int>(data["knobFrames"]));
+    }
+};
+class LonglandSchematicAudioProcessorEditor::RenderedDial final : public juce::Slider
+{
+public:
+    explicit RenderedDial(juce::RangedAudioParameter& p):parameter(p)
+    {
+        setSliderStyle(juce::Slider::RotaryVerticalDrag);setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+        setMouseDragSensitivity(180);setDoubleClickReturnValue(true,p.convertFrom0to1(p.getDefaultValue()));
+        setName(p.getName(64));setWantsKeyboardFocus(true);
+    }
+    void paint(juce::Graphics&) override {} // Parent composites assets at one precise scale.
+    void mouseEnter(const juce::MouseEvent& e) override {juce::Slider::mouseEnter(e);if(showValue)showValue();}
+    float position() const{return parameter.convertTo0to1(static_cast<float>(getValue()));}
+    juce::RangedAudioParameter& parameter;
+    std::function<void()> showValue;
+};
 
 LonglandSchematicAudioProcessorEditor::LonglandSchematicAudioProcessorEditor(LonglandSchematicAudioProcessor& owner)
-    : AudioProcessorEditor(&owner), processor(owner)
+    :AudioProcessorEditor(&owner),processor(owner)
 {
-    setOpaque(true);
-    setResizable(true, true);
-    setResizeLimits(860, 590, 1400, 900);
-    setSize(1060, 700);
-
-    for (const auto& preset : longland::factoryPresets())
-        presetBox.addItem(preset.name, presetBox.getNumItems() + 1);
-    presetBox.setSelectedItemIndex(processor.getCurrentProgram(), juce::dontSendNotification);
-    presetBox.onChange = [this]
+    instrumentLook=std::make_unique<LonglandLookAndFeel>();setLookAndFeel(instrumentLook.get());
+    static std::weak_ptr<LonglandRenderedSkin> cached;
+    skin=cached.lock();if(!skin){skin=std::make_shared<LonglandRenderedSkin>();cached=skin;}
+    setOpaque(true);setWantsKeyboardFocus(true);
+    for(const auto& sprite:skin->knobs)
     {
-        processor.setCurrentProgram(presetBox.getSelectedItemIndex());
-    };
-    presetLabel.setText("INSTRUMENT STATE", juce::dontSendNotification);
-
-    oscillatorBox.addItemList({ "Saw", "Square", "Narrow Pulse", "Triangle", "Organ" }, 1);
-    filterBox.addItemList({ "Low-pass", "Band-pass" }, 1);
-    noiseTypeBox.addItemList({ "Off", "Thermal", "Pink", "Supply Ripple", "Control Voltage" }, 1);
-    oscillatorAttachment = std::make_unique<ComboAttachment>(processor.state, "waveform", oscillatorBox);
-    filterAttachment = std::make_unique<ComboAttachment>(processor.state, "filterMode", filterBox);
-    noiseTypeAttachment = std::make_unique<ComboAttachment>(processor.state, "noiseType", noiseTypeBox);
-    oscillatorLabel.setText("OSCILLATOR", juce::dontSendNotification);
-    filterLabel.setText("MODE", juce::dontSendNotification);
-    noiseTypeLabel.setText("NOISE", juce::dontSendNotification);
-
-    configureDial(age, ageLabel, "AGE", "age");
-    configureDial(body, bodyLabel, "BODY", "body");
-    configureDial(drift, driftLabel, "DRIFT", "drift");
-    configureDial(cutoff, cutoffLabel, "CUTOFF", "cutoff");
-    configureDial(resonance, resonanceLabel, "RESONANCE", "resonance");
-    configureDial(attack, attackLabel, "ATTACK", "attack");
-    configureDial(decay, decayLabel, "DECAY", "decay");
-    configureDial(sustain, sustainLabel, "SUSTAIN", "sustain");
-    configureDial(release, releaseLabel, "RELEASE", "release");
-    configureDial(ensemble, ensembleLabel, "ENSEMBLE", "ensemble");
-    configureDial(compressor, compressorLabel, "COMP", "compressor");
-    configureDial(output, outputLabel, "VOLUME", "output");
-
-    const std::array<juce::Component*, 8> primaryComponents {
-        &presetBox, &oscillatorBox, &filterBox, &noiseTypeBox, &presetLabel, &oscillatorLabel,
-        &filterLabel, &noiseTypeLabel
-    };
-    for (auto* component : primaryComponents)
-        addAndMakeVisible(component);
-
-    for (auto* label : { &presetLabel, &oscillatorLabel, &filterLabel, &noiseTypeLabel, &ageLabel, &bodyLabel, &driftLabel,
-                          &cutoffLabel, &resonanceLabel, &attackLabel, &decayLabel, &sustainLabel,
-                          &releaseLabel, &ensembleLabel, &compressorLabel, &outputLabel })
-    {
-        label->setColour(juce::Label::textColourId, juce::Colours::black);
-        label->setJustificationType(juce::Justification::centred);
-        label->setFont(juce::FontOptions(11.0f).withStyle("Bold"));
-    }
-
-    startTimerHz(12);
-}
-
-void LonglandSchematicAudioProcessorEditor::configureDial(juce::Slider& slider, juce::Label& label,
-                                                            const juce::String& name, const char* parameterId)
-{
-    slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 58, 19);
-    slider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff303030));
-    slider.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xffc8c8c8));
-    slider.setColour(juce::Slider::thumbColourId, juce::Colours::black);
-    slider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::black);
-    slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::white);
-    slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    label.setText(name, juce::dontSendNotification);
-    addAndMakeVisible(slider);
-    addAndMakeVisible(label);
-    sliderAttachments.push_back(std::make_unique<SliderAttachment>(processor.state, parameterId, slider));
-}
-
-void LonglandSchematicAudioProcessorEditor::paint(juce::Graphics& graphics)
-{
-    graphics.fillAll(juce::Colours::white);
-    graphics.setColour(juce::Colours::black);
-    graphics.setFont(juce::FontOptions(28.0f).withStyle("Bold"));
-    graphics.drawText("LONGLAND SCHEMATIC", 24, 13, 480, 34, juce::Justification::centredLeft);
-    graphics.setFont(juce::FontOptions(13.0f));
-    graphics.drawText("A MEMORY SYNTHESIZER  /  DEVELOPMENT PANEL", 26, 49, 470, 20,
-                      juce::Justification::centredLeft);
-    graphics.drawLine(24.0f, 76.0f, static_cast<float>(getWidth() - 24), 76.0f, 1.5f);
-
-    const int availableWidth = getWidth() - 48;
-    const int gap = 18;
-    const int moduleWidth = (availableWidth - gap * 4) / 5;
-    const std::array<juce::String, 5> titles { "OSC", "DRIFT + AGE", "FILTER", "VCA", "MASTER" };
-    const std::array<juce::String, 5> details { "band-limited source", "memory / thermal", "2-pole circuit",
-                                                "imperfect envelope", "HPF > RMS > VCA > XFMR" };
-
-    for (int index = 0; index < 5; ++index)
-    {
-        const int x = 24 + index * (moduleWidth + gap);
-        drawModule(graphics, { x, moduleTop, moduleWidth, moduleHeight }, titles[index], details[index]);
-        if (index < 4)
+        auto* parameter=processor.state.getParameter(sprite.parameter);jassert(parameter!=nullptr);
+        auto dial=std::make_unique<RenderedDial>(*parameter);auto* raw=dial.get();
+        juce::String description=parameter->getName(64);
+        for(const auto& c:longland::floatControls)if(sprite.parameter==c.id)description=c.description;
+        if(sprite.parameter=="waveform")description="Saw / Square / Narrow Pulse / Triangle / Organ";
+        if(sprite.parameter=="noiseType")description="Off / Thermal / Pink / Supply Ripple / Control Voltage";
+        raw->setTooltip(description+". Drag vertically; double-click to reset.");
+        raw->showValue=[this,raw]
         {
-            const float from = static_cast<float>(x + moduleWidth);
-            const float to = static_cast<float>(x + moduleWidth + gap);
-            const float y = static_cast<float>(moduleTop + moduleHeight / 2);
-            graphics.drawLine(from, y, to, y, 1.2f);
-            juce::Path arrow;
-            arrow.addTriangle(to, y, to - 6.0f, y - 4.0f, to - 6.0f, y + 4.0f);
-            graphics.fillPath(arrow);
-        }
+            const auto unit=raw->parameter.getLabel();
+            const auto text=raw->parameter.isDiscrete()?raw->parameter.getText(raw->position(),48)
+                :juce::String(raw->getValue(),unit=="Hz"?0:unit=="s"?3:2);
+            valueLabel.setText(raw->parameter.getName(64)+": "+text+" "+unit,juce::dontSendNotification);
+        };
+        raw->onValueChange=[this,raw,bounds=sprite.rect]
+        {
+            raw->showValue();
+            repaint(screenBounds(bounds).expanded(2));
+        };
+        addAndMakeVisible(*raw);
+        attachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,sprite.parameter,*raw));
+        dials.push_back(std::move(dial));
     }
-
-    const int debugTop = 330;
-    graphics.setFont(juce::FontOptions(13.0f).withStyle("Bold"));
-    graphics.drawText("VIRTUAL VOICE CARDS", 24, debugTop, 300, 22, juce::Justification::centredLeft);
-    graphics.setFont(juce::FontOptions(12.0f));
-    graphics.drawText("BUS GR  " + juce::String(debugState.masterGainReductionDb, 1) + " dB    SUPPLY  "
-                          + juce::String(debugState.supplyVoltage * 12.0f, 3) + " V    ACTIVE  "
-                          + juce::String(debugState.activeVoices) + "/8",
-                      getWidth() - 430, debugTop, 406, 22, juce::Justification::centredRight);
-
-    const auto table = juce::Rectangle<int>(24, debugTop + 28, getWidth() - 48, 202);
-    graphics.drawRect(table, 1);
-    const int columnWidth = table.getWidth() / 8;
-    for (int index = 0; index < 8; ++index)
-    {
-        const auto cell = juce::Rectangle<int>(table.getX() + index * columnWidth, table.getY(), columnWidth,
-                                                table.getHeight());
-        if (index > 0)
-            graphics.drawVerticalLine(cell.getX(), static_cast<float>(cell.getY()), static_cast<float>(cell.getBottom()));
-        const auto& voice = debugState.voices[static_cast<std::size_t>(index)];
-        graphics.setFont(juce::FontOptions(12.0f).withStyle("Bold"));
-        graphics.drawText("VOICE " + juce::String(index + 1), cell.reduced(5).removeFromTop(24),
-                          juce::Justification::centred);
-        graphics.setFont(juce::FontOptions(11.5f));
-        auto content = cell.reduced(7);
-        content.removeFromTop(29);
-        const juce::String note = voice.active ? juce::MidiMessage::getMidiNoteName(voice.midiNote, true, true, 3) : "--";
-        const juce::String lines = note + "\n" + juce::String(voice.centsOffset, 2) + " ct\n"
-            + "T " + juce::String(voice.temperature, 3) + "\n"
-            + "F " + juce::String(voice.filterMismatch, 3) + "\n"
-            + "C " + juce::String(voice.capacitorAge, 3) + "\n"
-            + "A " + juce::String(voice.amplitudeMismatch, 3);
-        graphics.drawFittedText(lines, content, juce::Justification::centred, 6, 0.85f);
-        if (voice.active)
-            graphics.fillEllipse(static_cast<float>(cell.getCentreX() - 3), static_cast<float>(cell.getBottom() - 13), 6.0f, 6.0f);
-    }
-
-    graphics.setFont(juce::FontOptions(10.5f));
-    graphics.drawText("T temperature    F filter calibration    C envelope capacitor    A VCA gain",
-                      24, getHeight() - 30, getWidth() - 48, 18, juce::Justification::centredLeft);
+    for(const auto& preset:longland::factoryPresets())presetBox.addItem(preset.name,presetBox.getNumItems()+1);
+    presetBox.setSelectedItemIndex(processor.getCurrentProgram(),juce::dontSendNotification);
+    presetBox.onChange=[this]{processor.setCurrentProgram(presetBox.getSelectedItemIndex());};
+    presetBox.setName("Factory preset");presetBox.setTooltip("Factory instrument state");
+    filterButton.setName("Filter mode");filterButton.setClickingTogglesState(true);
+    filterButton.setTooltip("Filter mode: LP = low-pass, BP = band-pass. Click to switch.");
+    filterButton.onStateChange=[this]{filterButton.setButtonText(filterButton.getToggleState()?"BP":"LP");};
+    filterAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"filterMode",filterButton);
+    panicButton.onClick=[this]{releaseMouseNote();processor.requestPanic();};panicButton.setTooltip("Release held notes and sustain pedals");
+    for(auto* c:std::array<juce::Component*,5>{&presetBox,&filterButton,&valueLabel,&meterLabel,&panicButton})addAndMakeVisible(c);
+    for(auto* label:{&valueLabel,&meterLabel}){label->setColour(juce::Label::textColourId,juce::Colour(0xffd7cdb8));label->setFont(juce::FontOptions(12.0f));}
+    valueLabel.setText("Drag a knob / Click keys to play",juce::dontSendNotification);
+    meterLabel.setTooltip("Output RMS, 300 ms response. 0 VU = -18 dBFS. GR = compressor gain reduction.");
+    setResizable(true,true);setResizeLimits(960,600,1600,1000);getConstrainer()->setFixedAspectRatio(1.6);setSize(1280,800);
+    lastTimerMs=juce::Time::getMillisecondCounterHiRes();startTimerHz(60);
 }
-
-void LonglandSchematicAudioProcessorEditor::drawModule(juce::Graphics& graphics, juce::Rectangle<int> bounds,
-                                                        const juce::String& title, const juce::String& detail)
+LonglandSchematicAudioProcessorEditor::~LonglandSchematicAudioProcessorEditor()
+{stopTimer();releaseMouseNote();attachments.clear();filterAttachment.reset();setLookAndFeel(nullptr);}
+juce::Rectangle<int> LonglandSchematicAudioProcessorEditor::screenBounds(juce::Rectangle<int> bounds) const
+{return bounds.toFloat().transformedBy(juce::AffineTransform::scale(panelScale).translated(panelBounds.getX(),panelBounds.getY())).getSmallestIntegerContainer();}
+void LonglandSchematicAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    graphics.setColour(juce::Colours::black);
-    graphics.drawRect(bounds, 1);
-    graphics.setFont(juce::FontOptions(12.0f).withStyle("Bold"));
-    graphics.drawText(title, bounds.removeFromTop(22), juce::Justification::centred);
-    graphics.drawHorizontalLine(bounds.getY(), static_cast<float>(bounds.getX()), static_cast<float>(bounds.getRight()));
-    graphics.setFont(juce::FontOptions(10.0f));
-    graphics.drawText(detail, bounds.removeFromBottom(18), juce::Justification::centred);
+    g.fillAll(juce::Colour(0xff24211c));juce::Graphics::ScopedSaveState saved(g);
+    g.addTransform(juce::AffineTransform::scale(panelScale).translated(panelBounds.getX(),panelBounds.getY()));
+    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);g.drawImageAt(skin->panel,0,0);
+    for(const auto& key:skin->keys)drawSprite(g,key,keyTravel[static_cast<std::size_t>(key.note)],false);
+    for(std::size_t i=0;i<skin->knobs.size();++i)drawSprite(g,skin->knobs[i],dials[i]->position(),true);
+    drawSprite(g,skin->vu,needlePosition,true);
 }
-
 void LonglandSchematicAudioProcessorEditor::resized()
 {
-    presetLabel.setBounds(getWidth() - 304, 10, 280, 18);
-    presetBox.setBounds(getWidth() - 304, 31, 280, 30);
-
-    const int availableWidth = getWidth() - 48;
-    const int gap = 18;
-    const int moduleWidth = (availableWidth - gap * 4) / 5;
-    auto module = [moduleWidth, gap] (int index)
-    {
-        return juce::Rectangle<int>(24 + index * (moduleWidth + gap), moduleTop, moduleWidth, moduleHeight).reduced(9, 27);
-    };
-    auto placeDial = [] (juce::Rectangle<int> area, juce::Slider& dial, juce::Label& label, int slot, int count)
-    {
-        const int width = area.getWidth() / count;
-        auto bounds = juce::Rectangle<int>(area.getX() + slot * width, area.getY(), width, area.getHeight());
-        label.setBounds(bounds.removeFromTop(18));
-        dial.setBounds(bounds.reduced(1));
-    };
-
-    auto oscArea = module(0);
-    oscillatorLabel.setBounds(oscArea.removeFromTop(18));
-    oscillatorBox.setBounds(oscArea.removeFromTop(28));
-
-    auto ageArea = module(1);
-    placeDial(ageArea, age, ageLabel, 0, 3);
-    placeDial(ageArea, drift, driftLabel, 1, 3);
-    placeDial(ageArea, body, bodyLabel, 2, 3);
-
-    auto filterArea = module(2);
-    auto modeRow = filterArea.removeFromBottom(29);
-    filterLabel.setBounds(modeRow.removeFromLeft(43));
-    filterBox.setBounds(modeRow);
-    placeDial(filterArea, cutoff, cutoffLabel, 0, 2);
-    placeDial(filterArea, resonance, resonanceLabel, 1, 2);
-
-    auto vcaArea = module(3);
-    const int halfHeight = vcaArea.getHeight() / 2;
-    auto top = vcaArea.removeFromTop(halfHeight);
-    placeDial(top, attack, attackLabel, 0, 2);
-    placeDial(top, decay, decayLabel, 1, 2);
-    placeDial(vcaArea, sustain, sustainLabel, 0, 2);
-    placeDial(vcaArea, release, releaseLabel, 1, 2);
-
-    auto outputArea = module(4);
-    auto noiseRow = outputArea.removeFromBottom(29);
-    noiseTypeLabel.setBounds(noiseRow.removeFromLeft(43));
-    noiseTypeBox.setBounds(noiseRow);
-    placeDial(outputArea, ensemble, ensembleLabel, 0, 3);
-    placeDial(outputArea, compressor, compressorLabel, 1, 3);
-    placeDial(outputArea, output, outputLabel, 2, 3);
+    const float scale=getWidth()/1600.0f;const auto toolbar=juce::roundToInt(40*scale);
+    panelScale=std::min(getWidth()/static_cast<float>(skin->width),(getHeight()-toolbar)/static_cast<float>(skin->height));
+    panelBounds={(getWidth()-skin->width*panelScale)*.5f,static_cast<float>(toolbar),skin->width*panelScale,skin->height*panelScale};
+    for(std::size_t i=0;i<dials.size();++i)dials[i]->setBounds(screenBounds(skin->knobs[i].rect));
+    for(const auto& knob:skin->knobs)if(knob.parameter=="cutoff")
+        filterButton.setBounds(screenBounds({knob.rect.getRight()+3,knob.rect.getCentreY()-12,32,24}));
+    auto place=[scale](juce::Component& c,int x,int w){c.setBounds(juce::roundToInt(x*scale),4,juce::roundToInt(w*scale),juce::roundToInt(40*scale)-8);};
+    place(presetBox,12,310);place(valueLabel,338,750);place(meterLabel,1100,365);place(panicButton,1480,105);
 }
-
 void LonglandSchematicAudioProcessorEditor::timerCallback()
 {
-    debugState = processor.getDebugState();
-    if (!presetBox.isPopupActive())
-        presetBox.setSelectedItemIndex(processor.getCurrentProgram(), juce::dontSendNotification);
-    repaint();
+    const double now=juce::Time::getMillisecondCounterHiRes();
+    const auto dt=static_cast<float>(juce::jlimit(.001,.1,(now-lastTimerMs)*.001));lastTimerMs=now;
+    for(const auto& key:skin->keys)
+    {
+        const auto note=static_cast<std::size_t>(key.note);const auto serial=processor.getNoteOnSerial(key.note);
+        if(serial!=keySerial[note]){keySerial[note]=serial;keyHoldUntil[note]=now+45.0;}
+        const bool down=processor.keyboardState.isNoteOnForChannels(0xffff,key.note)||now<keyHoldUntil[note];const auto old=keyTravel[note];
+        keyTravel[note]+=((down?1.0f:0.0f)-old)*(1.0f-std::exp(-dt*(down?55.0f:30.0f)));
+        if(std::abs(keyTravel[note]-(down?1.0f:0.0f))<.001f)keyTravel[note]=down?1.0f:0.0f;
+        if(juce::roundToInt(old*4)!=juce::roundToInt(keyTravel[note]*4))repaint(screenBounds(key.rect).expanded(2));
+    }
+    const float vu=juce::Decibels::gainToDecibels(processor.getOutputLevel(),-100.0f)+18.0f;
+    const auto target=juce::jlimit(0.0f,1.0f,(vu+20.0f)/23.0f),previous=needlePosition;
+    needlePosition+=(target-needlePosition)*(1.0f-std::exp(-dt*24.0f));
+    if(std::abs(previous-needlePosition)>.00005f)repaint(screenBounds(skin->vu.rect).expanded(2));
+    if(++timerTicks%6==0)
+    {
+        if(!presetBox.isPopupActive())presetBox.setSelectedItemIndex(processor.getCurrentProgram(),juce::dontSendNotification);
+        meterLabel.setText("0 VU = -18 dBFS | GR "+juce::String(processor.getGainReduction(),1)+" dB",juce::dontSendNotification);
+    }
 }
+juce::Point<float> LonglandSchematicAudioProcessorEditor::modelPoint(juce::Point<float> p) const{return(p-panelBounds.getPosition())/panelScale;}
+int LonglandSchematicAudioProcessorEditor::noteAt(juce::Point<float> p) const
+{
+    const auto local=modelPoint(p);for(auto i=skin->keys.rbegin();i!=skin->keys.rend();++i)if(i->rect.toFloat().contains(local))return i->note;return -1;
+}
+void LonglandSchematicAudioProcessorEditor::playMouseNote(const juce::MouseEvent& e)
+{
+    const int note=noteAt(e.position);if(note==mouseNote)return;releaseMouseNote();mouseNote=note;
+    if(mouseNote>=0)
+    {
+        float velocity=.8f;for(const auto& key:skin->keys)if(key.note==note)velocity=juce::jlimit(.25f,1.0f,.3f+.7f*(modelPoint(e.position).y-key.rect.getY())/key.rect.getHeight());
+        processor.keyboardState.noteOn(16,mouseNote,velocity);
+    }
+}
+void LonglandSchematicAudioProcessorEditor::releaseMouseNote(){if(mouseNote>=0){processor.keyboardState.noteOff(16,mouseNote,0);mouseNote=-1;}}
+void LonglandSchematicAudioProcessorEditor::mouseDown(const juce::MouseEvent& e){grabKeyboardFocus();playMouseNote(e);}
+void LonglandSchematicAudioProcessorEditor::mouseDrag(const juce::MouseEvent& e){playMouseNote(e);}
+void LonglandSchematicAudioProcessorEditor::mouseUp(const juce::MouseEvent&){releaseMouseNote();}
